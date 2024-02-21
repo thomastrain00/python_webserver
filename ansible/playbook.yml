@@ -1,0 +1,79 @@
+---
+- name: Setup web server
+  hosts: webserver
+  become: true
+
+  tasks:
+    - name: Set timezone to America/Los_Angeles
+      community.general.timezone:
+        name: America/Los_Angeles
+      notify:
+        - "restart cron"
+
+    - name: Install updates for Debian-based systems
+      ansible.builtin.apt:
+        name: '*'
+        state: latest
+        update_cache: true
+      when:
+        - ansible_os_family == "Debian"
+
+    - name: Install updates for RHEL-base systems
+      ansible.builtin.dnf:
+        name: '*'
+        state: latest
+        update_cache: true
+      when:
+        - ansible_os_family == "RedHat"
+
+    - name: Install packages
+      ansible.builtin.package:
+        name:
+          - python3
+          - python3-pip
+          - net-tools
+          - network-manager
+          - vim
+          - git
+          - htop
+          - tmux
+          - neofetch
+        state: present
+
+    - name: Copy ./src directory to web server
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../src/"
+        dest: /home/vagrant/python_webserver/
+        owner: vagrant
+        group: vagrant
+        mode: '0644'
+        force: true
+
+  handlers:
+    - name: Restart cron after timezone change
+      ansible.builtin.systemd_service:
+        state: restarted
+        daemon_reload: true
+        name: cron
+      listen: "restart cron"
+
+- name: Configure and start web server
+  hosts: webserver
+  become: true
+
+  tasks:
+    - name: Copy service to web server
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../web_server.service"
+        dest: /etc/systemd/system
+        owner: vagrant
+        group: vagrant
+        mode: '0644'
+        force: true
+
+    - name: Start web server service
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+        enabled: true
+        state: "started"
+        name: web_server.service
