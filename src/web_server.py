@@ -1,4 +1,4 @@
-"""This module creates and runs a web server"""
+"""This module creates and runs a HTTP/1.1 web server"""
 import socket
 import os
 
@@ -6,50 +6,47 @@ import os
 SERVER_IP = '0.0.0.0'
 SERVER_PORT = 8080
 PATH_TO_SRC_DIR = os.path.dirname(os.path.realpath(__file__))
+PATH_TO_SRC_DIR_IMG = os.path.join(PATH_TO_SRC_DIR, "images")
+IMAGE_SUBSTRINGS = [".ico",".png",".jpg",".svg"]
+UNAUTHORIZED_SUBSTRINGS = ["..", "~",] # Check if URL points to unauth files
 
-def get_form_data(body):
-    """Parses HTTP body for form variables
-    """
-    data_dict = {}
-
-    # Split based on '&'
-
-    form_vars = body.split('&')
-    for form_var in form_vars:
-        key_value = form_var.split('=')
-        key = key_value[0]
-        value = key_value[1]
-        data_dict[key] = value
-
-    return data_dict
 
 def respond_get(connection, filename):
     """Respond to HTTP GET requests
     """
+
     try:
-        if filename in ("/", "/index.html"):
+        if filename in ["/", "/index.html"]:
             with open(os.path.join(PATH_TO_SRC_DIR,"index.html"), "r", encoding="utf-8") as file:
                 html_content = file.read()
-                response = "HTTP/2 200 OK\r\n\n" + html_content
-        elif filename == "/favicon.ico":
+                response = "HTTP/1.1 200 OK\r\n\n" + html_content
+                image_content = None
+        elif any(map(filename[1:].__contains__, IMAGE_SUBSTRINGS)):
             # Read images as binary data
-            with open(os.path.join(PATH_TO_SRC_DIR,"favicon.png"), "rb") as img:
+            with open(os.path.join(PATH_TO_SRC_DIR_IMG,filename[1:]), "rb") as img:
                 image_content = img.read()
-                response = f"HTTP/2 200 OK\r\n \
+                response = f"HTTP/1.1 200 OK\r\n \
                             Content-Type: image/png\r\n \
                             Content-Length: {len(image_content)}\r\n\n"
         else:
-            with open(os.path.join(PATH_TO_SRC_DIR,filename[1:]), "r",encoding="utf-8") as file:
+            if any(map(filename[1:].__contains__, UNAUTHORIZED_SUBSTRINGS)):
+                print("Client tried to access unauthorized files.")
+                raise FileNotFoundError
+            requested_file_path = os.path.join(PATH_TO_SRC_DIR,filename[1:])
+            with open(requested_file_path, "r",encoding="utf-8") as file:
                 html_content = file.read()
-                response = "HTTP/2 200 OK\r\n\n" + html_content
+                response = "HTTP/1.1 200 OK\r\n\n" + html_content
+                image_content = None
     except FileNotFoundError:
-        response = "HTTP/2 404 Not Found\r\n\nNot found"
+        response = "HTTP/1.1 404 Not Found\r\n\nNot found"
+        image_content = None
     except Exception as e:
         print(e)
         connection.close()
-        return None
+        return (None,None)
 
-    return response
+    return (response, image_content)
+
 
 def main():
     """Main function
@@ -77,14 +74,16 @@ def main():
             # Get client request
             try:
                 request = connection.recv(1024).decode()
-                print(f"Received HTTP request from {address}:\n{request}")
+                print(f"Received HTTP request from {address}:\n")
+                print("/----------START HTTP REQUEST PACKET----------/")
+                print(request)
+                print("/-----------END HTTP REQUEST PACKET-----------/")
             except UnicodeDecodeError as e:
                 print(e)
                 connection.close()
                 continue
 
-            # Process HTTP request
-            # Example:
+            # Example HTTP request:
                 # GET / HTTP/1.1
                 # Host: localhost:8000
                 # User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0
@@ -97,10 +96,20 @@ def main():
                 # Sec-Fetch-Mode: navigate
                 # Sec-Fetch-Site: none
                 # Sec-Fetch-User: ?1
+
+            # Handle the HTTP request
             try:
-                headers = request.split('\n')
-                request_method = headers[0].split()[0]
-                filename = headers[0].split()[1]
+                if request:
+                    headers = request.split('\n')
+                    request_method = headers[0].split()[0]
+                    filename = headers[0].split()[1]
+                    if "/images" in filename:
+                        filename = "/" + filename.split("/")[2]
+                else:
+                    print("Empty request. Closing connection...")
+                    connection.close()
+                    continue
+
             except TypeError as e:
                 print(e)
                 connection.close()
@@ -115,18 +124,17 @@ def main():
             image_content = None
 
             if request_method == "GET":
-                response = respond_get(connection, filename)
-
-            elif request_method == "POST":
-                body = headers[-1]
-                data_dict = get_form_data(body)
+                response, image_content = respond_get(connection, filename)
+                if (response,image_content) == (None,None):
+                    continue
+            else:
+                print("Request method not currently supported")
                 connection.close()
                 continue
 
-
             # Send HTTP response
             try:
-                if filename == "/favicon.ico":
+                if any(map(filename[1:].__contains__, IMAGE_SUBSTRINGS)):
                     connection.sendall(response.encode() + image_content)
                 elif response is None:
                     continue
@@ -136,15 +144,15 @@ def main():
                 print(e)
                 connection.close()
                 continue
-
+            
             connection.close()
             print(f"Closed connection to {address}\n")
-
 
     except KeyboardInterrupt:
         # Close socket
         print("\nWeb server stopped")
         server_socket.close()
+
 
 if __name__ == "__main__":
     main()
