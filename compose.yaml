@@ -1,0 +1,7 @@
+---
+services: 
+  docker-web-server:
+    container_name: docker-web-server
+    build: .
+    ports: 
+      - 8080:8080
