@@ -48,10 +48,11 @@ def respond_get(connection, filename):
     return (response, image_content)
 
 
-def main():
-    """Main function
+def init_socket():
+    """Initialize socket
     """
-    # Initialize TCP port 80
+
+    # Initialize TCP port
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Re-bind server port after keyboard interrupt
@@ -65,94 +66,115 @@ def main():
     print(f"Web server listening at: {SERVER_IP}:{str(SERVER_PORT)}")
     server_socket.listen()
 
+    return server_socket
+
+
+def get_request(connection, address):
+    """Get client request
+    """
     try:
-        while True:
-            # Wait for client connection to socket (accept() is blocking)
-            connection, address = server_socket.accept()
-            print(f"Accepted connection from {address}")
-
-            # Get client request
-            try:
-                request = connection.recv(1024).decode()
-                print(f"Received HTTP request from {address}:\n")
-                print("/----------START HTTP REQUEST PACKET----------/")
-                print(request)
-                print("/-----------END HTTP REQUEST PACKET-----------/")
-            except UnicodeDecodeError as e:
-                print(e)
-                connection.close()
-                continue
-
-            # Example HTTP request:
-                # GET / HTTP/1.1
-                # Host: localhost:8000
-                # User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0
-                # Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
-                # Accept-Language: en-US,en;q=0.5
-                # Accept-Encoding: gzip, deflate, br
-                # Connection: keep-alive
-                # Upgrade-Insecure-Requests: 1
-                # Sec-Fetch-Dest: document
-                # Sec-Fetch-Mode: navigate
-                # Sec-Fetch-Site: none
-                # Sec-Fetch-User: ?1
-
-            # Handle the HTTP request
-            try:
-                if request:
-                    headers = request.split('\n')
-                    request_method = headers[0].split()[0]
-                    filename = headers[0].split()[1]
-                    if "/images" in filename:
-                        filename = "/" + filename.split("/")[2]
-                else:
-                    print("Empty request. Closing connection...")
-                    connection.close()
-                    continue
-
-            except TypeError as e:
-                print(e)
-                connection.close()
-                continue
-            except IndexError as e:
-                print(e)
-                connection.close()
-                continue
-
-            # Generate HTTP response
-            response = None
-            image_content = None
-
-            if request_method == "GET":
-                response, image_content = respond_get(connection, filename)
-                if (response,image_content) == (None,None):
-                    continue
-            else:
-                print("Request method not currently supported")
-                connection.close()
-                continue
-
-            # Send HTTP response
-            try:
-                if any(map(filename[1:].__contains__, IMAGE_SUBSTRINGS)):
-                    connection.sendall(response.encode() + image_content)
-                elif response is None:
-                    continue
-                else:
-                    connection.sendall(response.encode())
-            except TypeError as e:
-                print(e)
-                connection.close()
-                continue
-            
+        request = connection.recv(1024).decode()
+        if request:
+            print(f"Received HTTP request from {address}:\n")
+            print("/----------START HTTP REQUEST PACKET----------/")
+            print(request)
+            print("/-----------END HTTP REQUEST PACKET-----------/")
+        else:
+            print("Empty request. Closing connection...")
             connection.close()
-            print(f"Closed connection to {address}\n")
+            return None
+    except UnicodeDecodeError as e:
+        print(e)
+        connection.close()
+        return None
 
-    except KeyboardInterrupt:
-        # Close socket
-        print("\nWeb server stopped")
-        server_socket.close()
+    return request
+
+
+def parse_request(connection, request):
+    """ Parse HTTP request header for the following:
+        - Request Method
+        - Filename
+    """
+    try:
+        headers = request.split('\n')
+        request_method = headers[0].split()[0]
+        filename = headers[0].split()[1]
+        # For images, get the filename without the "/images" directory 
+        if "/images" in filename:
+            filename = "/" + filename.split("/")[2]
+    except TypeError as e:
+        print(e)
+        connection.close()
+        return None,None
+    except IndexError as e:
+        print(e)
+        connection.close()
+        return None,None
+
+    return request_method, filename
+
+
+def main():
+    """Main function
+    """
+    server_socket = init_socket()
+
+    while True:
+        # Wait for new client connection to socket (accept() is blocking)
+        connection, address = server_socket.accept()
+        print(f"Accepted connection from {address}")
+
+        request = get_request(connection, address)
+        if request is None:
+            continue
+
+        # Example HTTP request:
+            # GET / HTTP/1.1
+            # Host: localhost:8000
+            # User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0
+            # Accept: text/html
+            # Accept-Language: en-US,en;q=0.5
+            # Accept-Encoding: gzip, deflate, br
+            # Connection: keep-alive
+            # Upgrade-Insecure-Requests: 1
+            # Sec-Fetch-Dest: document
+            # Sec-Fetch-Mode: navigate
+            # Sec-Fetch-Site: none
+            # Sec-Fetch-User: ?1
+
+        # Parse the HTTP request
+        request_method, filename = parse_request(connection, request)
+        if (request_method, filename) == (None,None):
+            continue
+
+        # Generate HTTP response
+        if request_method == "GET":
+            response, image_content = respond_get(connection, filename)
+            if (response,image_content) == (None,None):
+                continue
+        else:
+            print("Request method not currently supported.")
+            connection.close()
+            continue
+
+        # Send HTTP response
+        try:
+            if any(map(filename[1:].__contains__, IMAGE_SUBSTRINGS)):
+                connection.sendall(response.encode() + image_content)
+            else:
+                connection.sendall(response.encode())
+        except TypeError as e:
+            print(e)
+            connection.close()
+            continue
+
+        connection.close()
+        print(f"Closed connection to {address}\n")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nWeb server stopped")
