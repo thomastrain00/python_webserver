@@ -56,3 +56,7 @@ docker compose up -d
 
 - If you choose to deploy & provision the web server on a VM, you can access the website at [`http://192.168.1.150:8080`](http://192.168.1.150:8080).
 - If you run the web server locally or with a Docker container, you can access the website at [`http://localhost:8080`](http://localhost:8080).
+
+## Resources
+
+- [Let's Build A Web Server. Part 1.](https://ruslanspivak.com/lsbaws-part1/)
