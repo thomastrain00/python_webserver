@@ -1,2 +1,7 @@
 .vagrant
 .vscode
+src/bin
+src/inclue
+src/lib
+src/lib64
+src/pyvenv.cfg
